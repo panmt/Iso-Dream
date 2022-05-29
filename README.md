@@ -76,3 +76,5 @@ We appreciate the following github repos where we borrow code from:
 
 https://github.com/thuml/predrnn-pytorch
 
+https://github.com/jsikyoon/dreamer-torch
+
