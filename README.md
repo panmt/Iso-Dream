@@ -1,4 +1,6 @@
-# Isolating and Leveraging Controllable and Noncontrollable Visual Dynamics in World Models 
+# Iso-Dream 
+A PyTorch implementation of our paper: Isolating and Leveraging Controllable and Noncontrollable Visual Dynamics in World Models.
+
 
 ## Get Started
 Iso-Dream is implemented and tested on Ubuntu 18.04 with python == 3.7, PyTorch == 1.9.0:
