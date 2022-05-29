@@ -15,14 +15,17 @@ Iso-Dream is implemented and tested on Ubuntu 18.04 with python == 3.7, PyTorch 
    ```
 
 ## DMC / CARLA
+
 ### For CARLA environments:
 
   1. Setup
+  
      Download and setup CARLA 0.9.10
      ```
      chmod +x setup_carla.sh
      ./setup_carla.sh
      ```
+     
      Add to your python path:
      ```
      export PYTHONPATH=$PYTHONPATH:/home/CARLA_0.9.10/PythonAPI
@@ -32,6 +35,7 @@ Iso-Dream is implemented and tested on Ubuntu 18.04 with python == 3.7, PyTorch 
      and merge the directories.
 
   2. Training
+  
      Terminal 1:
      ```
      cd CARLA_0.9.10
