@@ -1,0 +1,19 @@
+torch
+torchvision
+gym
+atari_py
+opencv-python
+numpy
+psutil
+pyprind
+-e git+https://github.com/astooke/rlpyt.git#egg=rlpyt
+tqdm
+tensorboard
+moviepy
+shutil
+pickle
+pillow
+sklearn
+matplotlib
+lpips
+scikit-image
