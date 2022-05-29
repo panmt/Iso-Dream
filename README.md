@@ -74,7 +74,9 @@ Train and test Iso-Dream on BAIR and RoboNet datasets. Also, install Tensorflow 
 # Acknowledgement
 We appreciate the following github repos where we borrow code from:
 
+https://github.com/jsikyoon/dreamer-torch
+
 https://github.com/thuml/predrnn-pytorch
 
-https://github.com/jsikyoon/dreamer-torch
+
 
