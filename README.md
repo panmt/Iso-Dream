@@ -1,4 +1,4 @@
-# Iso-Dream 
+# Isolating and Leveraging Controllable and Noncontrollable Visual Dynamics in World Models 
 A PyTorch implementation of our paper: Isolating and Leveraging Controllable and Noncontrollable Visual Dynamics in World Models.
 
 
