@@ -1,5 +1,11 @@
 # Isolating and Leveraging Controllable and Noncontrollable Visual Dynamics in World Models 
-A PyTorch implementation of our paper: Isolating and Leveraging Controllable and Noncontrollable Visual Dynamics in World Models.
+A PyTorch implementation of our paper: 
+
+#### Isolating and Leveraging Controllable and Noncontrollable Visual Dynamics in World Models.
+
+Minting Pan, Xiangming Zhu, Yunbo Wang, Xiaokang Yang
+
+[[arXiv]](https://arxiv.org/abs/2205.13817)  [[Project Page]](https://sites.google.com/view/iso-dream)
 
 
 ## Get Started
