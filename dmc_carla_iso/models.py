@@ -86,7 +86,7 @@ class WorldModel(nn.Module):
         config.weight_decay, opt=config.opt,
         use_amp=self._use_amp)
     self._scales = dict(
-        reward=config.reward_scale, discount=config.discount_scale)
+        reward=config.reward_scale, discount=config.discount_scale, action=config.action_scale)
 
 
   def _train(self, data):
@@ -240,14 +240,17 @@ class ImagBehavior(nn.Module):
           [], config.value_layers, config.units, config.act)
       self._updates = 0
     kw = dict(wd=config.weight_decay, opt=config.opt, use_amp=self._use_amp)
+
+    ## attention
+    self.attention = networks.Attention(feat_size)
+
     self._actor_opt = tools.Optimizer(
         'actor', self.actor.parameters(), config.actor_lr, config.opt_eps, config.actor_grad_clip,
         **kw)
     self._value_opt = tools.Optimizer(
-        'value', self.value.parameters(), config.value_lr, config.opt_eps, config.value_grad_clip,
+        'value', list(self.value.parameters())+list(self.attention.parameters()), config.value_lr, config.opt_eps, config.value_grad_clip,
         **kw)
-    ## attention
-    self.attention = networks.Attention(feat_size)
+
     self.men = []
     self.num = 0
 
@@ -257,41 +260,44 @@ class ImagBehavior(nn.Module):
     self._update_slow_target()
     metrics = {}
 
-    with torch.cuda.amp.autocast(self._use_amp):
+    with tools.RequiresGrad(self.attention):
       with tools.RequiresGrad(self.actor):
-        imag_feat, imag_state, imag_action = self._imagine(
-            start, self.actor, self._config.imag_horizon, repeats)
-        reward = objective(imag_feat, imag_state, imag_action)
-        actor_ent = self.actor(imag_feat).entropy()
-        state_ent = self._world_model.dynamics.get_dist(
-        imag_state, free=False).entropy()
-        # + self._world_model.dynamics.get_dist(imag_state, free=True).entropy()
-        target, weights = self._compute_target(
-            imag_feat, imag_state, imag_action, reward, actor_ent, state_ent,
-            self._config.slow_actor_target)
-        actor_loss, mets = self._compute_actor_loss(
-            imag_feat, imag_state, imag_action, target, actor_ent, state_ent,
-            weights)
-        metrics.update(mets)
-        if self._config.slow_value_target != self._config.slow_actor_target:
+        with torch.cuda.amp.autocast(self._use_amp):
+          imag_feat, imag_state, imag_action = self._imagine(
+              start, self.actor, self._config.imag_horizon, repeats)
+          reward = objective(imag_feat, imag_state, imag_action)
+          actor_ent = self.actor(imag_feat.detach()).entropy()
+          state_ent = self._world_model.dynamics.get_dist(
+          imag_state, free=False).entropy() + self._world_model.dynamics.get_dist(imag_state, free=True).entropy()
           target, weights = self._compute_target(
               imag_feat, imag_state, imag_action, reward, actor_ent, state_ent,
-              self._config.slow_value_target)
-        value_input = imag_feat
+              self._config.slow_actor_target)
+          actor_loss, mets = self._compute_actor_loss(
+              imag_feat, imag_state, imag_action, target, actor_ent, state_ent,
+              weights)
+          metrics.update(mets)
+          if self._config.slow_value_target != self._config.slow_actor_target:
+            target, weights = self._compute_target(
+                imag_feat, imag_state, imag_action, reward, actor_ent, state_ent,
+                self._config.slow_value_target)
+          value_input = imag_feat
 
-        with tools.RequiresGrad(self.value):
-          value = self.value(value_input[:-1].detach())
+      with tools.RequiresGrad(self.value):
+        with torch.cuda.amp.autocast(self._use_amp):
+          value = self.value(value_input[:-1])
           target = torch.stack(target, dim=1)
           value_loss = -value.log_prob(target.detach())
           if self._config.value_decay:
             value_loss += self._config.value_decay * value.mode()
           value_loss = torch.mean(weights[:-1] * value_loss[:,:,None])
 
-          metrics['reward_mean'] = to_np(torch.mean(reward))
-          metrics['reward_std'] = to_np(torch.std(reward))
-          metrics['actor_ent'] = to_np(torch.mean(actor_ent))
-          metrics.update(self._actor_opt(actor_loss, self.actor.parameters()))
-          metrics.update(self._value_opt(value_loss, self.value.parameters()))
+    metrics['reward_mean'] = to_np(torch.mean(reward))
+    metrics['reward_std'] = to_np(torch.std(reward))
+    metrics['actor_ent'] = to_np(torch.mean(actor_ent))
+    with tools.RequiresGrad(self):
+      metrics.update(self._actor_opt(actor_loss, self.actor.parameters()))
+      metrics.update(self._value_opt(value_loss, list(self.value.parameters())+list(self.attention.parameters())))
+
     return imag_feat, imag_state, imag_action, weights, metrics
 
   def init_men(self):
@@ -320,7 +326,7 @@ class ImagBehavior(nn.Module):
       feat = dynamics.get_feat(state, free_atten, self.attention)
       self.num += 1
 
-      action = policy(feat).sample()
+      action = policy(feat.detach()).sample()
       succ = dynamics.img_step(state, action, sample=self._config.imag_sample)
       return succ, feat, action
     feat = 0 * dynamics.get_feat_for_reward(start)
