@@ -17,7 +17,7 @@ defaults:
   expl_gifs: False
   mask: 3
   inverse_dynamics: True
-  action_scale: 0.001
+  action_scale: 1
   bg_enc: False
   sample_free: True
   softmax: False
