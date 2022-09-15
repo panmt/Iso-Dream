@@ -1,12 +1,21 @@
-# Isolating and Leveraging Controllable and Noncontrollable Visual Dynamics in World Models 
+# Iso-Dream: Isolating and Leveraging Controllable and Noncontrollable Visual Dynamics in World Models (NeurIPS 2022)
 A PyTorch implementation of our paper: 
 
-#### Isolating and Leveraging Controllable and Noncontrollable Visual Dynamics in World Models.
+#### Iso-Dream: Isolating and Leveraging Controllable and Noncontrollable Visual Dynamics in World Models.
 
 Minting Pan, Xiangming Zhu, Yunbo Wang, Xiaokang Yang
 
 [[arXiv]](https://arxiv.org/abs/2205.13817)  [[Project Page]](https://sites.google.com/view/iso-dream)
 
+## Showcases
+
+DMC and CARLA
+
+<img src="https://github.com/panmt/Iso-Dream/blob/main/picture/dmc_carla_vis.png" width="60%" align=“center” />
+
+BAIR
+
+<img src="https://github.com/panmt/Iso-Dream/blob/main/picture/bair_vis.png" width="70%" align=“center” />
 
 ## Get Started
 Iso-Dream is implemented and tested on Ubuntu 18.04 with python == 3.7, PyTorch == 1.9.0:
@@ -22,9 +31,9 @@ Iso-Dream is implemented and tested on Ubuntu 18.04 with python == 3.7, PyTorch 
    pip install -r requirements.txt
    ```
 
-## DMC / CARLA
+### DMC / CARLA
 
-### For CARLA environments:
+#### For CARLA environments:
 
   1. Setup
   
@@ -62,7 +71,7 @@ Iso-Dream is implemented and tested on Ubuntu 18.04 with python == 3.7, PyTorch 
      python test.py --logdir test --action_step 20 --step 50 --kl_balance 0.8 --configs defaults carla
      ```
 
-## BAIR / RoboNet
+### BAIR / RoboNet
 Train and test Iso-Dream on BAIR and RoboNet datasets. Also, install Tensorflow 2.1.0 for BAIR dataloader.
 
 1. Download BAIR data. 
@@ -77,7 +86,7 @@ Train and test Iso-Dream on BAIR and RoboNet datasets. Also, install Tensorflow 
     sh train_iso_model.sh
     ```
 
-# Acknowledgement
+## Acknowledgement
 We appreciate the following github repos where we borrow code from:
 
 https://github.com/jsikyoon/dreamer-torch
