@@ -11,11 +11,11 @@ Minting Pan, Xiangming Zhu, Yunbo Wang, Xiaokang Yang
 
 DMC and CARLA
 
-<img src="https://github.com/panmt/Iso-Dream/blob/main/picture/dmc_carla_vis.png" width="60%" align=“center” />
+<img src="https://github.com/panmt/Iso-Dream/blob/main/picture/dmc_carla_vis.png" width="70%" align=“center” />
 
 BAIR
 
-<img src="https://github.com/panmt/Iso-Dream/blob/main/picture/bair_vis.png" width="70%" align=“center” />
+<img src="https://github.com/panmt/Iso-Dream/blob/main/picture/bair_vis.png" width="85%" align=“center” />
 
 ## Get Started
 Iso-Dream is implemented and tested on Ubuntu 18.04 with python == 3.7, PyTorch == 1.9.0:
