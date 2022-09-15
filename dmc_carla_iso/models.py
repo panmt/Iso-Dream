@@ -270,7 +270,7 @@ class ImagBehavior(nn.Module):
           state_ent = self._world_model.dynamics.get_dist(
           imag_state, free=False).entropy() + self._world_model.dynamics.get_dist(imag_state, free=True).entropy()
           target, weights = self._compute_target(
-              imag_feat, imag_state, imag_action, reward, actor_ent, state_ent,
+              imag_feat.detach(), imag_state, imag_action, reward, actor_ent, state_ent,
               self._config.slow_actor_target)
           actor_loss, mets = self._compute_actor_loss(
               imag_feat, imag_state, imag_action, target, actor_ent, state_ent,
