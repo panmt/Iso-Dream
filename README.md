@@ -3,7 +3,7 @@ A PyTorch implementation of our paper:
 
 #### Iso-Dream: Isolating and Leveraging Controllable and Noncontrollable Visual Dynamics in World Models.
 
-Minting Pan, Xiangming Zhu, Yunbo Wang, Xiaokang Yang
+Minting Pan*, Xiangming Zhu*, Yunbo Wang, Xiaokang Yang
 
 [[arXiv]](https://arxiv.org/abs/2205.13817)  [[Project Page]](https://sites.google.com/view/iso-dream)
 
