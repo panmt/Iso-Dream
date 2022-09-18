@@ -9,11 +9,20 @@ Minting Pan*, Xiangming Zhu*, Yunbo Wang, Xiaokang Yang
 
 ## Showcases
 
-DMC and CARLA
+#### DMC and CARLA
 
 <img src="https://github.com/panmt/Iso-Dream/blob/main/picture/dmc_carla_vis.png" width="70%" align=“center” />
 
-BAIR
+Demo of Iso-Dream in DMC with noisy video backgrounds
+
+<img src="https://github.com/panmt/Iso-Dream/blob/main/picture/dmc_demo.gif" width="30%" align=“center” /> <img src="https://github.com/panmt/Iso-Dream/blob/main/picture/dmc_demo_2.gif" width="30%" align=“center” />
+
+Demo of Iso-Dream in CARLA
+
+<img src="https://github.com/panmt/Iso-Dream/blob/main/picture/carla_demo.gif" width="30%" align=“center” /> <img src="https://github.com/panmt/Iso-Dream/blob/main/picture/carla_demo_2.gif" width="30%" align=“center” />
+
+
+#### BAIR
 
 <img src="https://github.com/panmt/Iso-Dream/blob/main/picture/bair_vis.png" width="85%" align=“center” />
 
