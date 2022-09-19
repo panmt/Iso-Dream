@@ -1,7 +1,7 @@
-# Iso-Dream: Isolating and Leveraging Controllable and Noncontrollable Visual Dynamics in World Models (NeurIPS 2022)
+# Iso-Dream: Isolating Noncontrollable Visual Dynamics in World Models (NeurIPS 2022)
 A PyTorch implementation of our paper: 
 
-#### Iso-Dream: Isolating and Leveraging Controllable and Noncontrollable Visual Dynamics in World Models.
+#### Iso-Dream: Isolating Noncontrollable Visual Dynamics in World Models.
 
 Minting Pan*, Xiangming Zhu*, Yunbo Wang, Xiaokang Yang
 
