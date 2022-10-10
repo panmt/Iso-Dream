@@ -71,7 +71,7 @@ Iso-Dream is implemented and tested on Ubuntu 18.04 with python == 3.7, PyTorch 
      Terminal 2:
      ```
      cd dmc_carla_iso
-     python dreamer.py --logdir log/iso_carla --action_step 20 --step 50 --kl_balance 0.8 --action_scale 0.001 --seed 9 --configs defaults carla
+     python dreamer.py --logdir log/iso_carla --action_step 20 --step 50 --kl_balance 0.8 --action_scale 1 --seed 9 --configs defaults carla
      ```
 
   3. Evaluation
