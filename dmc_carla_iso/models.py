@@ -265,7 +265,7 @@ class ImagBehavior(nn.Module):
         with torch.cuda.amp.autocast(self._use_amp):
           imag_feat, imag_state, imag_action = self._imagine(
               start, self.actor, self._config.imag_horizon, repeats)
-          reward = objective(imag_feat, imag_state, imag_action)
+          reward = objective(imag_feat.detach(), imag_state, imag_action)
           actor_ent = self.actor(imag_feat.detach()).entropy()
           state_ent = self._world_model.dynamics.get_dist(
           imag_state, free=False).entropy() + self._world_model.dynamics.get_dist(imag_state, free=True).entropy()
