@@ -141,7 +141,7 @@ class DeepMindControl:
     assert np.isfinite(action).all(), action
     reward = 0
     for _ in range(self._action_repeat):
-      time_step = self._env.step(action)
+      time_step = self._env.step(action) 
       reward += time_step.reward or 0
       if time_step.last():
         break
@@ -155,6 +155,72 @@ class DeepMindControl:
     time_step = self._env.reset()
     obs = dict(time_step.observation)
     obs['image'] = self.render()
+    return obs
+
+  def render(self, *args, **kwargs):
+    if kwargs.get('mode', 'rgb_array') != 'rgb_array':
+      raise ValueError("Only render mode 'rgb_array' is supported.")
+    return self._env.physics.render(*self._size, camera_id=self._camera)
+
+
+class DeepMindControlGen:
+
+  def __init__(self, name, seed, action_repeat=1, size=(64, 64), eval_mode=None, camera=None):
+    domain, task = name.split('_', 1)
+    if domain == 'cup':  # Only domain with multiple words.
+      domain = 'ball_in_cup'
+    from envs.wrappers import make_env
+    self._env = make_env(
+      domain_name=domain,
+      task_name=task,
+      seed=seed,
+      # episode_length=args.max_episode_length,
+      action_repeat=action_repeat,
+      image_size=size[0],
+      mode=eval_mode,  # 'train',
+      frame_stack=1
+    )
+    self._action_repeat = action_repeat
+    self._size = size
+    if camera is None:
+      camera = dict(quadruped=2).get(domain, 0)
+    self._camera = camera
+
+  @property
+  def observation_space(self):
+    spaces = {}
+    for key, value in self._env.observation_spec().items():
+      spaces[key] = gym.spaces.Box(
+          -np.inf, np.inf, value.shape, dtype=np.float32)
+    spaces['image'] = gym.spaces.Box(
+        0, 255, self._size + (3,), dtype=np.uint8)
+    return gym.spaces.Dict(spaces)
+
+  @property
+  def action_space(self):
+    spec = self._env.action_spec()
+    return gym.spaces.Box(spec.minimum, spec.maximum, dtype=np.float32)
+
+  def step(self, action):
+    assert np.isfinite(action).all(), action
+    reward = 0
+    try:
+      obs_, reward, done, info = self._env.step(action)
+    except Exception as e:
+      # print(e)
+      # print(action)
+      spec = self._env.action_spec()
+      obs_, reward, done, info = self._env.step(np.clip(action, a_min=spec.minimum, a_max=spec.maximum))
+    obs = {}
+    obs['image'] = np.array(obs_).transpose(1, 2, 0)
+    # print(info['bg'].shape)
+    # obs['bg'] = info['bg']
+    return obs, reward, done, info
+
+  def reset(self):
+    obs = {}
+    time_step = self._env.reset()
+    obs['image'] = np.array(time_step).transpose(1, 2, 0)
     return obs
 
   def render(self, *args, **kwargs):
@@ -252,19 +318,32 @@ class CollectDataset:
           self._episode[0][key] = 0 * value
       episode = {k: [t[k] for t in self._episode] for k in self._episode[0]}
       episode = {k: self._convert(v) for k, v in episode.items()}
+      # for key in episode.keys():
+      #   print(key)
+      #   if isinstance(episode[key],list):
+      #     print('list')
+      #   else:
+      #     print(episode[key].shape)
+      # exit()
       info['episode'] = episode
       for callback in self._callbacks:
         callback(episode)
     return obs, reward, done, info
 
   def reset(self):
-    action = {'action': np.zeros([2])}
-    reset = True
-    done = True
-    while reset or (done and (info['reason_episode_ended'] == 'carla_bug')):
-      obs = self._env.reset()
-      obs, reward, done, info = self._env.step(action)
-      reset = False
+    # action = {'action': np.zeros([2])}
+    # reset = True
+    # done = True
+    # while reset or (done and (info['reason_episode_ended'] == 'carla_bug')):
+    #   obs = self._env.reset()
+    #   obs, reward, done, info = self._env.step(action)
+    #   reset = False
+    # transition = obs.copy()
+    # transition['reward'] = 0.0
+    # transition['discount'] = 1.0
+    # self._episode = [transition]
+    
+    obs = self._env.reset()
     transition = obs.copy()
     # Missing keys will be filled with a zeroed out version of the first
     # transition, because we do not know what action information the agent will
@@ -277,6 +356,8 @@ class CollectDataset:
   def _convert(self, value):
     # print(value.shape)
     value = np.array(value)
+    # print(value.shape)
+    # exit()
     if np.issubdtype(value.dtype, np.floating):
       dtype = {16: np.float16, 32: np.float32, 64: np.float64}[self._precision]
     elif np.issubdtype(value.dtype, np.signedinteger):

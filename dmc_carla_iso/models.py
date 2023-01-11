@@ -20,7 +20,7 @@ class WorldModel(nn.Module):
     self._config = config
     self.mask = config.mask
     self.encoder = networks.ConvEncoder(config.grayscale,
-        config.cnn_depth, config.act, config.encoder_kernels)
+        config.cnn_depth, config.act, config.encoder_kernels, config)
     if config.size[0] == 64 and config.size[1] == 64:
       embed_size = 2 ** (len(config.encoder_kernels)-1) * config.cnn_depth
       embed_size *= 2 * 2
@@ -64,10 +64,7 @@ class WorldModel(nn.Module):
         embed_size * config.init_frame,  # pytorch version
         config.cnn_depth, config.act, shape, config.decoder_kernels,
         config.decoder_thin)
-    self.dynamics.decoder_free = self.heads['image'].decoder_free
-    self.dynamics.encoder = self.encoder
     double_size = 2 if config.use_free else 1
-    # double_size = 1
     self.heads['reward'] = networks.DenseHead(
         double_size*feat_size,  # pytorch version
         [], config.reward_layers, config.units, config.act)
@@ -90,8 +87,9 @@ class WorldModel(nn.Module):
 
 
   def _train(self, data):
-    data = self.preprocess(data)
+    data = self.preprocess(data) 
     self.dynamics.train_wm = True
+    self.dynamics.step = 0
 
     with tools.RequiresGrad(self):
       with torch.cuda.amp.autocast(self._use_amp):
@@ -112,10 +110,13 @@ class WorldModel(nn.Module):
         likes = {}
         for name, head in self.heads.items():
           if 'image' in name:
-            feat, feat_free = self.dynamics.get_feat_for_decoder(post, prior=prior, step=self._config.action_step)
+            feat, feat_free = self.dynamics.get_feat_for_decoder(post, prior=prior, action_step=self._config.action_step, free_step=self._config.free_step)
             if self.mask == 3:
-              pred, _, _, _, _ = self.heads['image'](feat, feat_free, background)
-              like = pred.log_prob(data[name]) #[:, 1:, :, :, :])
+              pred, _, _, action_mask, free_mask = self.heads['image'](feat, feat_free, background)
+              if self._config.autoencoder:
+                like = pred.log_prob(data[name][:, 1:, :, :, :]) 
+              else:
+                like = pred.log_prob(data[name])  
             else:
               pred, _, _, _, _ = self.heads['image'](feat, feat_free, data['image'])
               like = pred.log_prob(data[name])
@@ -126,13 +127,17 @@ class WorldModel(nn.Module):
             like = pred.log_prob(data[name][:, 1:, :])
           else:
             grad_head = (name in self._config.grad_heads)
-            feat = self.dynamics.get_feat_for_reward(post)
+            feat = self.dynamics.get_feat(post)
             feat = feat if grad_head else feat.detach()
             pred = head(feat)
-            like = pred.log_prob(data[name]) #[:, 1:, :])
+            if self._config.autoencoder:
+              like = pred.log_prob(data[name][:, 1:, :]) 
+            else:
+              like = pred.log_prob(data[name])
           likes[name] = like
           losses[name] = -torch.mean(like) * self._scales.get(name, 1.0)
         model_loss = sum(losses.values()) + kl_loss
+
       metrics = self._model_opt(model_loss, self.parameters())
 
     metrics.update({f'{name}_loss': to_np(loss) for name, loss in losses.items()})
@@ -167,7 +172,10 @@ class WorldModel(nn.Module):
 
   def video_pred(self, data):
     data = self.preprocess(data)
-    truth = data['image'][:6] + 0.5
+    if self._config.autoencoder:
+      truth = data['image'][:6, 1:] + 0.5
+    else:
+      truth = data['image'][:6] + 0.5
     embed = self.encoder(data)
 
     self.dynamics.rollout_free = True
@@ -183,7 +191,7 @@ class WorldModel(nn.Module):
       recon, gen_action, gen_free, mask_action, mask_free = self.heads['image'](feat, feat_free)
     recon = recon.mode()[:6]
     reward_post = self.heads['reward'](
-        self.dynamics.get_feat_for_reward(states)).mode()[:6]
+        self.dynamics.get_feat(states)).mode()[:6]
     init = {k: v[:, -1] for k, v in states.items()}
     self.dynamics.predict = True
     prior = self.dynamics.imagine(data['action'][:6, 5:], init)
@@ -195,7 +203,7 @@ class WorldModel(nn.Module):
       openl, openl_gen_action, openl_gen_free, openl_mask_action, openl_mask_free = self.heads['image'](feat, feat_free)
     openl = openl.mode()
     # openl = self.heads['image'](self.dynamics.get_feat(prior)).mode()
-    reward_prior = self.heads['reward'](self.dynamics.get_feat_for_reward(prior)).mode()
+    reward_prior = self.heads['reward'](self.dynamics.get_feat(prior)).mode()
     model = torch.cat([recon[:, :5] + 0.5, openl + 0.5], 1)
     error = (model - truth + 1) / 2
 
@@ -203,7 +211,7 @@ class WorldModel(nn.Module):
     gen_free = torch.cat([gen_free[:, :5] + 0.5, openl_gen_free + 0.5], 1)
     mask_action = torch.cat([mask_action[:, :5], openl_mask_action], 1).repeat(1,1,1,1,3)
     mask_free = torch.cat([mask_free[:, :5], openl_mask_free], 1).repeat(1,1,1,1,3)
-    mask_3 = 1- mask_action - mask_free
+    mask_3 = 1 - mask_action - mask_free
     back = background * torch.ones_like(mask_3) + 0.5
     self.dynamics.rollout_free = self._config.use_free
 
@@ -223,7 +231,6 @@ class ImagBehavior(nn.Module):
       feat_size = config.dyn_stoch * config.dyn_discrete + config.dyn_deter
     else:
       feat_size = config.dyn_stoch + config.dyn_deter
-    # double_size = 2 if config.use_free else 1
     double_size = 1
     self.actor = networks.ActionHead(
         double_size*feat_size,  # pytorch version
@@ -247,10 +254,16 @@ class ImagBehavior(nn.Module):
     self._actor_opt = tools.Optimizer(
         'actor', self.actor.parameters(), config.actor_lr, config.opt_eps, config.actor_grad_clip,
         **kw)
-    self._value_opt = tools.Optimizer(
+    if self._config.rollout_policy:
+      self._value_opt = tools.Optimizer(
         'value', list(self.value.parameters())+list(self.attention.parameters()), config.value_lr, config.opt_eps, config.value_grad_clip,
         **kw)
+    else:
+      self._value_opt = tools.Optimizer(
+        'value', self.value.parameters(), config.value_lr, config.opt_eps, config.value_grad_clip,
+        **kw)
 
+  def init_men(self):
     self.men = []
     self.num = 0
 
@@ -259,18 +272,47 @@ class ImagBehavior(nn.Module):
     objective = objective or self._reward
     self._update_slow_target()
     metrics = {}
+    if self._config.rollout_policy:
+      with tools.RequiresGrad(self.attention):
+        with tools.RequiresGrad(self.actor):
+          with torch.cuda.amp.autocast(self._use_amp):
+            imag_feat, imag_state, imag_action = self._imagine(
+                start, self.actor, self._config.imag_horizon, repeats)
+            reward = objective(imag_feat.detach(), imag_state, imag_action)
+            actor_ent = self.actor(imag_feat.detach()).entropy()
+            state_ent = self._world_model.dynamics.get_dist(
+            imag_state, free=False).entropy() + self._world_model.dynamics.get_dist(imag_state, free=True).entropy()
+            target, weights = self._compute_target(
+                imag_feat.detach(), imag_state, imag_action, reward, actor_ent, state_ent,
+                self._config.slow_actor_target)
+            actor_loss, mets = self._compute_actor_loss(
+                imag_feat, imag_state, imag_action, target, actor_ent, state_ent,
+                weights)
+            metrics.update(mets)
+            if self._config.slow_value_target != self._config.slow_actor_target:
+              target, weights = self._compute_target(
+                  imag_feat, imag_state, imag_action, reward, actor_ent, state_ent,
+                  self._config.slow_value_target)
+            value_input = imag_feat
 
-    with tools.RequiresGrad(self.attention):
+        with tools.RequiresGrad(self.value):
+          with torch.cuda.amp.autocast(self._use_amp):
+            value = self.value(value_input[:-1])
+            target = torch.stack(target, dim=1)
+            value_loss = -value.log_prob(target.detach())
+            if self._config.value_decay:
+              value_loss += self._config.value_decay * value.mode()
+            value_loss = torch.mean(weights[:-1] * value_loss[:,:,None])
+    else:  
       with tools.RequiresGrad(self.actor):
         with torch.cuda.amp.autocast(self._use_amp):
           imag_feat, imag_state, imag_action = self._imagine(
               start, self.actor, self._config.imag_horizon, repeats)
-          reward = objective(imag_feat.detach(), imag_state, imag_action)
-          actor_ent = self.actor(imag_feat.detach()).entropy()
-          state_ent = self._world_model.dynamics.get_dist(
-          imag_state, free=False).entropy() + self._world_model.dynamics.get_dist(imag_state, free=True).entropy()
+          reward = objective(imag_feat, imag_state, imag_action)
+          actor_ent = self.actor(imag_feat).entropy()
+          state_ent = self._world_model.dynamics.get_dist(imag_state, free=False).entropy()
           target, weights = self._compute_target(
-              imag_feat.detach(), imag_state, imag_action, reward, actor_ent, state_ent,
+              imag_feat, imag_state, imag_action, reward, actor_ent, state_ent,
               self._config.slow_actor_target)
           actor_loss, mets = self._compute_actor_loss(
               imag_feat, imag_state, imag_action, target, actor_ent, state_ent,
@@ -284,25 +326,24 @@ class ImagBehavior(nn.Module):
 
       with tools.RequiresGrad(self.value):
         with torch.cuda.amp.autocast(self._use_amp):
-          value = self.value(value_input[:-1])
+          value = self.value(value_input[:-1].detach())
           target = torch.stack(target, dim=1)
           value_loss = -value.log_prob(target.detach())
           if self._config.value_decay:
             value_loss += self._config.value_decay * value.mode()
           value_loss = torch.mean(weights[:-1] * value_loss[:,:,None])
-
+          
     metrics['reward_mean'] = to_np(torch.mean(reward))
     metrics['reward_std'] = to_np(torch.std(reward))
     metrics['actor_ent'] = to_np(torch.mean(actor_ent))
     with tools.RequiresGrad(self):
       metrics.update(self._actor_opt(actor_loss, self.actor.parameters()))
-      metrics.update(self._value_opt(value_loss, list(self.value.parameters())+list(self.attention.parameters())))
+      if self._config.rollout_policy:
+        metrics.update(self._value_opt(value_loss, list(self.value.parameters())+list(self.attention.parameters())))
+      else:
+        metrics.update(self._value_opt(value_loss, self.value.parameters()))
 
     return imag_feat, imag_state, imag_action, weights, metrics
-
-  def init_men(self):
-    self.men = []
-    self.num = 0
 
   def _imagine(self, start, policy, horizon, repeats=None):
     dynamics = self._world_model.dynamics
@@ -310,32 +351,34 @@ class ImagBehavior(nn.Module):
       raise NotImplemented("repeats is not implemented in this version")
     flatten = lambda x: x.reshape([-1] + list(x.shape[2:]))
     start = {k: flatten(v) for k, v in start.items()}
-
-    self.init_men()
-    start_free = start.copy()
-    for _ in range(self._config.window + horizon):
-      stoch_free = start_free['stoch_free']
-      deter_free = start_free['deter_free']
-      free_feat = torch.cat([stoch_free, deter_free], -1)
-      self.men.append(free_feat)
-      start_free = dynamics.img_step(start_free, None, sample=self._config.imag_sample, only_free=True)
+    
+    if self._config.rollout_policy:
+      self.init_men()
+      start_free = start.copy()
+      for _ in range(self._config.window + horizon):
+        stoch_free = start_free['stoch_free']
+        deter_free = start_free['deter_free']
+        free_feat = torch.cat([stoch_free, deter_free], -1)
+        self.men.append(free_feat)
+        start_free = dynamics.img_step(start_free, None, sample=self._config.imag_sample, only_free=True)
 
     def step(prev, _):
       state, _, _ = prev
-      free_atten = torch.stack(self.men[self.num:self.num + self._config.window], dim=1)
-      feat = dynamics.get_feat(state, free_atten, self.attention)
-      self.num += 1
-
+      if self._config.rollout_policy:
+        free_atten = torch.stack(self.men[self.num:self.num + self._config.window], dim=1)
+        feat = dynamics.get_feat_rollout_policy(state, free_atten, self.attention)
+        self.num += 1
+      else:
+        feat = dynamics.get_feat(state)
       action = policy(feat.detach()).sample()
       succ = dynamics.img_step(state, action, sample=self._config.imag_sample)
       return succ, feat, action
-    feat = 0 * dynamics.get_feat_for_reward(start)
-    feat, _ = feat.chunk(2, dim=-1)
+    feat = 0 * dynamics.get_feat(start)
+    if self._config.use_free:
+      feat, _ = feat.chunk(2, dim=-1)
     action = policy(feat).mode()
-    dynamics.imag = True
     succ, feats, actions = tools.static_scan(
         step, [torch.arange(horizon)], (start, feat, action))
-    dynamics.imag = False
     states = {k: torch.cat([
         start[k][None], v[:-1]], 0) for k, v in succ.items()}
     if repeats:

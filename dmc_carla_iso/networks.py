@@ -19,7 +19,7 @@ class RSSM(nn.Module):
     super(RSSM, self).__init__()
     self._stoch = stoch
     self._deter = deter
-    self._hidden = hidden
+    self._hidden = hidden                                                       
     self._min_std = min_std
     self._layers_input = layers_input
     self._layers_output = layers_output
@@ -35,6 +35,7 @@ class RSSM(nn.Module):
     self._config = config
     self.step = 0
     self.train_wm = False
+    self.num_actions = num_actions
 
     inp_layers = []
     inp_layers_free = []
@@ -48,7 +49,10 @@ class RSSM(nn.Module):
       inp_layers.append(nn.Linear(inp_dim, self._hidden))
       inp_layers.append(self._act())
       if i == 0:
-        inp_layers_free.append(nn.Linear(inp_dim - num_actions, self._hidden))
+        if self._config.autoencoder:
+          inp_layers_free.append(nn.Linear(self._embed, self._hidden))
+        else:
+          inp_layers_free.append(nn.Linear(inp_dim - num_actions, self._hidden))
         inp_layers_free.append(self._act())
       else:
         inp_layers_free.append(nn.Linear(self._hidden, self._hidden))
@@ -119,7 +123,6 @@ class RSSM(nn.Module):
       self._obs_stat_layer_free = nn.Linear(self._hidden, 2*self._stoch)
 
     self.rollout_free = self._config.use_free
-    self.imag = False
 
   def initial(self, batch_size):
     deter = torch.zeros(batch_size, self._deter).to(self._device)
@@ -153,12 +156,17 @@ class RSSM(nn.Module):
       state = self.initial(action.shape[0])
     embed, action = swap(embed), swap(action)
     _, self.embed_free = torch.chunk(embed, chunks=2, dim=-1)
-    self.step = 0
-    post, prior = tools.static_scan(
-        lambda prev_state, prev_act, embed: self.obs_step(
-            prev_state[0], prev_act, embed),
-        (action, embed), (state, state))
-    self.step = 0
+    if self._config.autoencoder:
+      state['last_embed_free'] = self.embed_free[0]
+      post, prior = tools.static_scan(
+          lambda prev_state, prev_act, embed: self.obs_step(
+              prev_state[0], prev_act, embed),
+          (action[1:, :, :], embed[1:, :, :]), (state, state))
+    else:
+      post, prior = tools.static_scan(
+          lambda prev_state, prev_act, embed: self.obs_step(
+              prev_state[0], prev_act, embed),
+          (action, embed), (state, state))
     post = {k: swap(v) for k, v in post.items()}
     prior = {k: swap(v) for k, v in prior.items()}
     return post, prior
@@ -175,14 +183,15 @@ class RSSM(nn.Module):
     prior = {k: swap(v) for k, v in prior.items()}
     return prior
 
-  def get_feat(self, state, free_atten, atten_net):
+  def get_feat_rollout_policy(self, state, free_atten, atten_net):
     stoch = state['stoch']
     deter = state['deter']
     action_feat = torch.cat([stoch, deter], -1)
+    free_atten = free_atten.detach()
     feat = atten_net(action_feat.detach(), free_atten.detach())
     return feat
 
-  def get_feat_for_reward(self, state):
+  def get_feat(self, state):
     stoch = state['stoch']
     if self._discrete:
       shape = list(stoch.shape[:-2]) + [self._stoch * self._discrete]
@@ -196,24 +205,22 @@ class RSSM(nn.Module):
         stoch_free = stoch_free.reshape(shape)
       return torch.cat([stoch, state['deter'], stoch_free, state['deter_free']], -1)
 
-  def get_feat_for_decoder(self, state, prior=None, step=None):
+  def get_feat_for_decoder(self, state, prior=None, action_step=None, free_step=None):
     stoch = state['stoch']
-    if self._discrete:
-      shape = list(stoch.shape[:-2]) + [self._stoch * self._discrete]
-      stoch = stoch.reshape(shape)
     feat = torch.cat([stoch, state['deter']], -1)
 
     if prior is not None:
       prior_stoch = prior['stoch']
-      if self._discrete:
-        prior_stoch = prior_stoch.reshape(shape)
       feat_prior = torch.cat([prior_stoch, prior['deter']], -1)
-      feat = torch.cat([feat[:, :step, :], feat_prior[:, step:, :]], dim=1)
+      feat = torch.cat([feat[:, :action_step, :], feat_prior[:, action_step:, :]], dim=1)
 
     stoch_free = state['stoch_free']
-    if self._discrete:
-      stoch_free = stoch_free.reshape(shape)
     feat_free = torch.cat([stoch_free, state['deter_free']], -1)
+
+    if prior is not None:
+      prior_stoch_free = prior['stoch_free']
+      feat_prior_free = torch.cat([prior_stoch_free, prior['deter_free']], -1)
+      feat_free = torch.cat([feat_free[:, :free_step, :], feat_prior_free[:, free_step:, :]], dim=1)
     return feat, feat_free
 
   def get_dist(self, state, free, dtype=None):
@@ -239,21 +246,23 @@ class RSSM(nn.Module):
       post = self.img_step(prev_state, prev_action, embed, sample)
     else:
       post = dict()
-      if True:
-        embed_action, embed_free = torch.chunk(embed, dim=-1, chunks=2)
-        if self._temp_post:
-          x = torch.cat([prior['deter'], embed_action], -1)
+      embed_action, embed_free = torch.chunk(embed, dim=-1, chunks=2)
+      if self._temp_post:
+        x = torch.cat([prior['deter'], embed_action], -1)
+        if not self._config.autoencoder:
           x_free = torch.cat([prior['deter_free'], embed_free], -1)
-        else:
-          x = embed_action
+      else:
+        x = embed_action
+        if not self._config.autoencoder:
           x_free = embed_free
-        x = self._obs_out_layers(x)
-        stats = self._suff_stats_layer('obs', x, free=False)
-        if sample:
-          stoch = self.get_dist(stats, free=False).sample()
-        else:
-          stoch = self.get_dist(stats, free=False).mode()
-      if self.step < self._config.step:
+      x = self._obs_out_layers(x)
+      stats = self._suff_stats_layer('obs', x, free=False)
+      if sample:
+        stoch = self.get_dist(stats, free=False).sample()
+      else:
+        stoch = self.get_dist(stats, free=False).mode()
+      
+      if not self._config.autoencoder:
         x_free = self._obs_out_layers_free(x_free)
         stats_free = self._suff_stats_layer('obs', x_free, free=True)
         if sample:
@@ -264,6 +273,8 @@ class RSSM(nn.Module):
                 'deter_free': prior['deter_free'], **stats_free}
       else:
         post = {'stoch': stoch, 'deter': prior['deter'], **stats}
+        if self.step < self._config.free_step:
+          post['last_embed_free'] = embed_free
         for key in prior:
           if key not in post.keys():
             post[key] = prior[key]
@@ -282,6 +293,7 @@ class RSSM(nn.Module):
         x = torch.cat([prev_stoch, prev_action, embed], -1)
       else:
         x = torch.cat([prev_stoch, prev_action], -1)
+
       x = self._inp_layers(x)
       for _ in range(self._rec_depth): # rec depth is not correctly implemented
         deter = prev_state['deter']
@@ -293,7 +305,6 @@ class RSSM(nn.Module):
         stoch = self.get_dist(stats, free=False).sample()
       else:
         stoch = self.get_dist(stats, free=False).mode()
-
       prior = {'stoch': stoch, 'deter': deter, **stats}
       
     prev_stoch_free = prev_state['stoch_free']
@@ -303,31 +314,30 @@ class RSSM(nn.Module):
       x = torch.cat([prev_stoch_free, embed], -1)
     else:
       x = prev_stoch_free
+    if self._config.autoencoder:
+      x = prev_state['last_embed_free']
     
-  
     assert not self._discrete and not self._shared, 'not implemented!'
-    if self.rollout_free:
-      x = self._inp_layers_free(x)
+    x = self._inp_layers_free(x)
+    for _ in range(self._rec_depth): # rec depth is not correctly implemented
+      deter_free = prev_state['deter_free']
+      x, deter_free = self._cell_free(x, [deter_free])
+      deter_free = deter_free[0]  # Keras wraps the state in a list.
+    x = self._img_out_layers_free(x)
+    stats_free = self._suff_stats_layer('ims', x, free=True)
+    if self._config.sample_free:
+      stoch_free = self.get_dist(stats_free, free=True).sample()
+    else:
+      stoch_free = self.get_dist(stats_free, free=True).mode()
 
-      for _ in range(self._rec_depth): # rec depth is not correctly implemented
-        assert self._rec_depth == 1
-        deter_free = prev_state['deter_free']
-        x, deter_free = self._cell_free(x, [deter_free])
-        deter_free = deter_free[0]  # Keras wraps the state in a list.
-      x = self._img_out_layers_free(x)
-      stats_free = self._suff_stats_layer('ims', x, free=True)
-      if self._config.sample_free:
-        stoch_free = self.get_dist(stats_free, free=True).sample()
-      else:
-        stoch_free = self.get_dist(stats_free, free=True).mode()
-         
-      prior.update({'stoch_free': stoch_free, 'deter_free': deter_free, **stats_free})
-      if only_free:
-        return prior
+    prior.update({'stoch_free': stoch_free, 'deter_free': deter_free, **stats_free})
 
+    if self._config.autoencoder:
+      prior_emb_free = torch.zeros([prev_stoch.shape[0], self._embed]).to(prev_stoch.device)
+      prior['last_embed_free'] = prior_emb_free
       if self.train_wm:
         self.step += 1
-
+        
     return prior
 
   def _suff_stats_layer(self, name, x, free):
@@ -407,14 +417,15 @@ class RSSM(nn.Module):
     return tot_loss, tot_value
 
 
-class ConvEncoder(nn.Module):
+class ConvEncoder(nn.Module): 
 
   def __init__(self, grayscale=False,
-               depth=32, act=nn.ReLU, kernels=(4, 4, 4, 4)):
+               depth=32, act=nn.ReLU, kernels=(4, 4, 4, 4), config=None):
     super(ConvEncoder, self).__init__()
     self._act = act
     self._depth = depth
     self._kernels = kernels
+    self._config = config
 
     layers = []
     layers_action = []
@@ -429,10 +440,17 @@ class ConvEncoder(nn.Module):
       else:
         inp_dim = 2 ** (i-1) * self._depth
       depth = 2 ** i * self._depth
-      if i >= 2:
+      if i > 2:
         layers_action.append(nn.Conv2d(inp_dim, depth, kernel, 2))
         layers_action.append(act())
         layers_free.append(nn.Conv2d(inp_dim, depth, kernel, 2))
+        layers_free.append(act())
+        layers_back.append(nn.Conv2d(inp_dim, depth, kernel, 2))
+        layers_back.append(act())
+      elif i == 2:
+        layers_action.append(nn.Conv2d(inp_dim, depth, kernel, 2))
+        layers_free.append(nn.Conv2d(inp_dim, depth, kernel, 2))
+        layers_action.append(act())
         layers_free.append(act())
         layers_back.append(nn.Conv2d(inp_dim, depth, kernel, 2))
         layers_back.append(act())
@@ -449,7 +467,7 @@ class ConvEncoder(nn.Module):
       obs = {'image': obs}
     x = obs['image'].reshape((-1,) + tuple(obs['image'].shape[-3:]))
     x = x.permute(0, 3, 1, 2)
-    x = self.layers(x)
+    x = self.layers(x)  ### 64*14*14
     if bg:
       x_back = self.encoder_back(x)
       x_back = x_back.reshape([x_back.shape[0], np.prod(x_back.shape[1:])])

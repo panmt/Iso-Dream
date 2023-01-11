@@ -5,7 +5,7 @@ import os
 import pathlib
 import sys
 import warnings
-from agents.navigation.carla_env_dream import CarlaEnv
+from agents.navigation.carla_env_dreamer import CarlaEnv
 
 os.environ['MUJOCO_GL'] = 'egl'
 
@@ -20,6 +20,7 @@ from torch import nn
 
 import exploration as expl
 import models
+import networks
 import tools
 import wrappers
 
@@ -57,15 +58,6 @@ class Dreamer(nn.Module):
         random=lambda: expl.Random(config),
         plan2explore=lambda: expl.Plan2Explore(config, self._wm, reward),
     )[config.expl_behavior]()
-    self.step = 0
-    self.recon = []
-    self.gen_action = []
-    self.gen_free = []
-    self.mask_action = []
-    self.mask_free = []
-    self.mask_3 = []
-    self.back = []
-    self.obs = []
 
   def __call__(self, obs, reset, state=None, reward=None, training=True):
     step = self._step
@@ -100,8 +92,6 @@ class Dreamer(nn.Module):
     return policy_output, state
 
   def _policy(self, obs, state, training):
-    self.step += 1
-    # obs = torch.load(f'fig/obs_{self.step}.pkl')
     if state is None:
       batch_size = len(obs['image'])
       latent = self._wm.dynamics.initial(len(obs['image']))
@@ -111,20 +101,22 @@ class Dreamer(nn.Module):
     embed = self._wm.encoder(self._wm.preprocess(obs))
     latent, _ = self._wm.dynamics.obs_step(
         latent, action, embed, self._config.collect_dyn_sample)
-
     if self._config.eval_state_mean:
       latent['stoch'] = latent['mean']
-
-    self._task_behavior.init_men()
-    latent_free = latent.copy()
-    for _ in range(self._config.window):
-      stoch_free = latent_free['stoch_free']
-      deter_free = latent_free['deter_free']
-      free_feat = torch.cat([stoch_free, deter_free], -1)
-      self._task_behavior.men.append(free_feat)       
-      latent_free = self._wm.dynamics.img_step(latent_free, None, sample=self._config.imag_sample, only_free=True)
-    free_atten = torch.stack(self._task_behavior.men, dim=1)
-    feat = self._wm.dynamics.get_feat(latent, free_atten, self._task_behavior.attention)
+    
+    if self._config.rollout_policy:
+      men_free = []
+      latent_free = latent.copy()
+      for _ in range(self._config.window):
+        stoch_free = latent_free['stoch_free']
+        deter_free = latent_free['deter_free']
+        free_feat = torch.cat([stoch_free, deter_free], -1)
+        men_free.append(free_feat.detach())   
+        latent_free = self._wm.dynamics.img_step(latent_free, None, sample=self._config.imag_sample, only_free=True)
+      free_atten = torch.stack(men_free, dim=1)
+      feat = self._wm.dynamics.get_feat_rollout_policy(latent, free_atten, self._task_behavior.attention)
+    else:
+      feat = self._wm.dynamics.get_feat(latent)
     if not training:
       actor = self._task_behavior.actor(feat)
       action = actor.mode()
@@ -140,6 +132,7 @@ class Dreamer(nn.Module):
     if self._config.actor_dist == 'onehot_gumble':
       action = torch.one_hot(torch.argmax(action, dim=-1), self._config.num_actions)
     action = self._exploration(action, training)
+    action = torch.clamp(action, -1, 1)
     policy_output = {'action': action, 'logprob': logprob}
     state = (latent, action)
     return policy_output, state
@@ -194,6 +187,9 @@ def make_env(config, logger, mode, train_eps, eval_eps):
   if suite == 'dmc':
     env = wrappers.DeepMindControl(task, config.action_repeat, config.size)
     env = wrappers.NormalizeActions(env)
+  elif suite == 'dmcbg':
+    env = wrappers.DeepMindControlGen(task, config.seed, config.action_repeat, config.size, config.eval_mode)
+    env = wrappers.NormalizeActions(env)    
   elif suite == 'atari':
     env = wrappers.Atari(
         task, config.action_repeat, config.size,
@@ -222,22 +218,31 @@ def make_env(config, logger, mode, train_eps, eval_eps):
     env_eval = env
   else:
     raise NotImplementedError(suite)
-  env = wrappers.TimeLimit(env, config.time_limit)
-  env_eval = wrappers.TimeLimit(env_eval, config.time_limit)
-  env = wrappers.SelectAction(env, key='action')
-  env_eval = wrappers.SelectAction(env_eval, key='action')
-  mode = 'train'
-  callbacks = [functools.partial(
-        process_episode, config, logger, mode, train_eps, eval_eps)]
-  env = wrappers.CollectDataset(env, callbacks)
-  mode = 'eval'
-  callbacks_eval = [functools.partial(
-        process_episode, config, logger, mode, train_eps, eval_eps)]
-  env_eval = wrappers.CollectDataset(env_eval, callbacks_eval)
-  env = wrappers.RewardObs(env)
-  env_eval = wrappers.RewardObs(env_eval)
-  # print(env==env_eval)
-  return env, env_eval
+  if suite == 'carla':
+    env = wrappers.TimeLimit(env, config.time_limit)
+    env_eval = wrappers.TimeLimit(env_eval, config.time_limit)
+    env = wrappers.SelectAction(env, key='action')
+    env_eval = wrappers.SelectAction(env_eval, key='action')
+    mode = 'train'
+    callbacks = [functools.partial(
+          process_episode, config, logger, mode, train_eps, eval_eps)]
+    env = wrappers.CollectDataset(env, callbacks)
+    mode = 'eval'
+    callbacks_eval = [functools.partial(
+          process_episode, config, logger, mode, train_eps, eval_eps)]
+    env_eval = wrappers.CollectDataset(env_eval, callbacks_eval)
+    env = wrappers.RewardObs(env)
+    env_eval = wrappers.RewardObs(env_eval)
+    return env, env_eval
+  else:
+    env = wrappers.TimeLimit(env, config.time_limit)
+    env = wrappers.SelectAction(env, key='action')
+    if (mode == 'train') or (mode == 'eval'):
+      callbacks = [functools.partial(
+          process_episode, config, logger, mode, train_eps, eval_eps)]
+      env = wrappers.CollectDataset(env, callbacks)
+    env = wrappers.RewardObs(env)
+    return env
 
 
 def process_episode(config, logger, mode, train_eps, eval_eps, episode):
@@ -271,6 +276,7 @@ def process_episode(config, logger, mode, train_eps, eval_eps, episode):
 
 
 def main(config):
+  # print(config.logdir)
   logdir = pathlib.Path(config.logdir).expanduser()
   config.traindir = config.traindir or logdir / 'train_eps'
   config.evaldir = config.evaldir or logdir / 'eval_eps'
@@ -299,19 +305,32 @@ def main(config):
     directory = config.evaldir
   eval_eps = tools.load_episodes(directory, limit=1)
   make = lambda mode: make_env(config, logger, mode, train_eps, eval_eps)
-  envs_list = [make('train') for _ in range(config.envs)]
-  train_envs = [envs_list[0][0]]
-  eval_envs = [envs_list[0][1]]
+  suite, task = config.task.split('_', 1)
+  if suite == 'carla':
+    envs_list = [make('train') for _ in range(config.envs)]
+    train_envs = [envs_list[0][0]]
+    eval_envs = [envs_list[0][1]]
+  else:
+    train_envs = [make('train') for _ in range(config.envs)]
+    eval_envs = [make('eval') for _ in range(config.envs)]    
   acts = train_envs[0].action_space
-  config.num_actions = acts.shape[0]
+  if suite == 'carla':
+    config.num_actions = acts.shape[0]
+  else:
+    config.num_actions = acts.n if hasattr(acts, 'n') else acts.shape[0]
 
   if not config.offline_traindir:
     prefill = max(0, config.prefill - count_steps(config.traindir))
+    prefill = 0
     print(f'Prefill dataset ({prefill} steps).')
-
-    random_actor = torchd.independent.Independent(
-          torchd.uniform.Uniform(torch.Tensor([acts.low.min(), acts.low.min()])[None],
-                                 torch.Tensor([acts.high.max(), acts.high.max()])[None]), 1)
+    if suite == 'carla':
+      random_actor = torchd.independent.Independent(
+            torchd.uniform.Uniform(torch.Tensor([acts.low.min(), acts.low.min()])[None],
+                                  torch.Tensor([acts.high.max(), acts.high.max()])[None]), 1)
+    else:
+      random_actor = torchd.independent.Independent(
+          torchd.uniform.Uniform(torch.Tensor(acts.low)[None],
+                                 torch.Tensor(acts.high)[None]), 1)
     def random_agent(o, d, s, r):
       action = random_actor.sample()
       logprob = random_actor.log_prob(action)
@@ -324,9 +343,8 @@ def main(config):
   eval_dataset = make_dataset(eval_eps, config)
   agent = Dreamer(config, logger, train_dataset).to(config.device)
   agent.requires_grad_(requires_grad=False)
-  agent.load_state_dict(torch.load(logdir / 'model_106555.pt'))
-  agent._should_pretrain._once = False
-
+  agent.load_state_dict(torch.load('latest_model.pt'))
+  agent._should_pretrain._once = False  
   torch.backends.cudnn.enabled = False
 
   state = None
