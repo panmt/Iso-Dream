@@ -11,7 +11,7 @@ defaults:
   log_every: 1e4
   reset_every: 0
   #gpu_growth: True
-  device: 'cuda:0'
+  device: 'cuda:5'
   precision: 16
   debug: False
   expl_gifs: False
@@ -21,11 +21,13 @@ defaults:
   bg_enc: False
   sample_free: True
   softmax: False
-  step: 50
   action_step: 25
+  free_step: 25
   init_frame: 10
   eval_mode: 'video_easy'
-  use_free: True
+  use_free: False
+  rollout_policy: False
+  autoencoder: False
 
   # carla environment
   domain_name: 'carla'
@@ -251,9 +253,14 @@ dmc:
   steps: 1e6
   eval_every: 5e3 # 1e4
   log_every: 5e3 # 1e4
-  prefill: 200
+  prefill: 2500
   dataset_size: 0
   pretrain: 100
+  action_step: 50
+  free_step: 40
+  use_free: False
+  rollout_policy: False
+  autoencoder: True
 
   # Environment
   time_limit: 1000
@@ -302,6 +309,11 @@ carla:
   prefill: 2500
   dataset_size: 0
   pretrain: 100
+  action_step: 25
+  free_step: 50
+  use_free: True
+  rollout_policy: True
+  autoencoder: False
 
   # Environment
   time_limit: 1000
