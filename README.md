@@ -84,10 +84,12 @@ Iso-Dream is implemented and tested on Ubuntu 18.04 with python == 3.7, PyTorch 
 
   1. Setup DMC with video background
   
+     Download 'envs' [here](https://drive.google.com/drive/folders/1vAHRBx7zlK-XHowSOAv-gBPWlubvpnCo?usp=sharing) and put it in the 'dmc_carla_iso'. The dependencies can then be installed with the following commands:
+  
      ```
      cd dmc_carla_iso
      
-     cd ./env/dm_control
+     cd ./envs/dm_control
      pip install -e .
      
      cd ../dmc2gym
@@ -98,7 +100,6 @@ Iso-Dream is implemented and tested on Ubuntu 18.04 with python == 3.7, PyTorch 
 
   2. Training
      ```
-     cd dmc_carla_iso
      python dreamer.py --logdir log/iso_dmc --kl_balance 0.8 --seed 8 --configs defaults dmc --task dmcbg_walker_walk
      ```
   
