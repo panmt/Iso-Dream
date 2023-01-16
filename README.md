@@ -119,6 +119,19 @@ Train and test Iso-Dream on BAIR and RoboNet datasets. Also, install Tensorflow 
     sh train_iso_model.sh
     ```
 
+## Citation
+
+Pan, Minting and Zhu, Xiangming and Wang, Yunbo and Yang, Xiaokang. "Iso-Dream: Isolating and Leveraging Noncontrollable Visual Dynamics in World Models". Advances in Neural Information Processing Systems. 2022.
+
+```
+@inproceedings{paniso,
+  title={Iso-Dream: Isolating and Leveraging Noncontrollable Visual Dynamics in World Models},
+  author={Pan, Minting and Zhu, Xiangming and Wang, Yunbo and Yang, Xiaokang},
+  booktitle={Advances in Neural Information Processing Systems}
+  year={2022}
+}
+```
+
 ## Acknowledgement
 We appreciate the following github repos where we borrow code from:
 
