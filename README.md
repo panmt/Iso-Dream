@@ -84,12 +84,12 @@ Iso-Dream is implemented and tested on Ubuntu 18.04 with python == 3.7, PyTorch 
 
   1. Setup DMC with video background
   
-     Download 'envs' [here](https://drive.google.com/drive/folders/1vAHRBx7zlK-XHowSOAv-gBPWlubvpnCo?usp=sharing) and put it in the 'dmc_carla_iso'. The dependencies can then be installed with the following commands:
+     Download 'env' from [Google Drive](https://drive.google.com/drive/folders/1vAHRBx7zlK-XHowSOAv-gBPWlubvpnCo?usp=sharing) or [here](https://github.com/nicklashansen/dmcontrol-generalization-benchmark/tree/main/src/env) and put it in the 'dmc_carla_iso'. The dependencies can then be installed with the following commands:
   
      ```
      cd dmc_carla_iso
      
-     cd ./envs/dm_control
+     cd ./env/dm_control
      pip install -e .
      
      cd ../dmc2gym
