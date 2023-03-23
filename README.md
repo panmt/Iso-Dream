@@ -89,7 +89,7 @@ Iso-Dream is implemented and tested on Ubuntu 18.04 with python == 3.7, PyTorch 
      ```
      cd dmc_carla_iso
      
-     cd ./env/dm_control
+     cd ./envs/dm_control
      pip install -e .
      
      cd ../dmc2gym
