@@ -207,8 +207,6 @@ class DeepMindControlGen:
     try:
       obs_, reward, done, info = self._env.step(action)
     except Exception as e:
-      # print(e)
-      # print(action)
       spec = self._env.action_spec()
       obs_, reward, done, info = self._env.step(np.clip(action, a_min=spec.minimum, a_max=spec.maximum))
     obs = {}
@@ -318,31 +316,12 @@ class CollectDataset:
           self._episode[0][key] = 0 * value
       episode = {k: [t[k] for t in self._episode] for k in self._episode[0]}
       episode = {k: self._convert(v) for k, v in episode.items()}
-      # for key in episode.keys():
-      #   print(key)
-      #   if isinstance(episode[key],list):
-      #     print('list')
-      #   else:
-      #     print(episode[key].shape)
-      # exit()
       info['episode'] = episode
       for callback in self._callbacks:
         callback(episode)
     return obs, reward, done, info
 
   def reset(self):
-    # action = {'action': np.zeros([2])}
-    # reset = True
-    # done = True
-    # while reset or (done and (info['reason_episode_ended'] == 'carla_bug')):
-    #   obs = self._env.reset()
-    #   obs, reward, done, info = self._env.step(action)
-    #   reset = False
-    # transition = obs.copy()
-    # transition['reward'] = 0.0
-    # transition['discount'] = 1.0
-    # self._episode = [transition]
-    
     obs = self._env.reset()
     transition = obs.copy()
     # Missing keys will be filled with a zeroed out version of the first
@@ -354,10 +333,7 @@ class CollectDataset:
     return obs
  
   def _convert(self, value):
-    # print(value.shape)
     value = np.array(value)
-    # print(value.shape)
-    # exit()
     if np.issubdtype(value.dtype, np.floating):
       dtype = {16: np.float16, 32: np.float32, 64: np.float64}[self._precision]
     elif np.issubdtype(value.dtype, np.signedinteger):
