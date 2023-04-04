@@ -58,7 +58,7 @@ Iso-Dream is implemented and tested on Ubuntu 18.04 with python == 3.7, PyTorch 
      export PYTHONPATH=$PYTHONPATH:/home/CARLA_0.9.10/PythonAPI/carla
      export PYTHONPATH=$PYTHONPATH:/home/CARLA_0.9.10/PythonAPI/carla/dist/carla-0.9.10-py3.7-linux-x86_64.egg
      ```
-     and merge the directories.
+     and merge the directories, i.e., put 'carla_env_dream.py' into 'CARLA_0.9.10/PythonAPI/carla/agents/navigation/'.
 
   2. Training
   
