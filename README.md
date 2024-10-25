@@ -1,6 +1,6 @@
 # Iso-Dream: Isolating and Leveraging Noncontrollable Visual Dynamics in World Models (NeurIPS 2022 Spotlight)
 
-#### 🌟🌟🌟 New: Iso-Dream++ (a stronger version of Iso-Dream) is available at [here](https://github.com/panmt/MBRL_with_Isolated_Imaginations).
+### 🌟🌟🌟 New: Iso-Dream++ (a stronger version of Iso-Dream) is available at [here](https://github.com/panmt/MBRL_with_Isolated_Imaginations).
 
 A PyTorch implementation of our paper: 
 #### Iso-Dream: Isolating and Leveraging Noncontrollable Visual Dynamics in World Models.
